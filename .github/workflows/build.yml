@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -B build -A x64 -DVK_BUILD_TESTS=ON
+
+      - name: Check every mood does what it says
+        run: |
+          cmake --build build --config Release --target VibeTests --parallel
+          build/VibeTests_artefacts/Release/VibeTests.exe
+
+      - name: Build
+        run: cmake --build build --config Release --target VibeKnob_VST3 VibeKnob_Standalone VibeKnobPro_VST3 VibeKnobPro_Standalone --parallel
+
+      - name: Zip plugins
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "build/VibeKnob_artefacts/Release/VST3/Vibe Knob.vst3", "build/VibeKnob_artefacts/Release/Standalone/Vibe Knob.exe" -DestinationPath VibeKnob-Windows.zip
+          Compress-Archive -Path "build/VibeKnobPro_artefacts/Release/VST3/Vibe Knob Pro.vst3", "build/VibeKnobPro_artefacts/Release/Standalone/Vibe Knob Pro.exe" -DestinationPath VibeKnobPro-Windows.zip
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeKnob-Windows
+          path: "*-Windows.zip"
+
+      # Fixed download links for the newest build:
+      # https://github.com/AzeMovement/vibe-knob/releases/download/latest/VibeKnob-Windows.zip
+      - name: Publish latest build
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest VibeKnob-Windows.zip VibeKnobPro-Windows.zip --prerelease --target "$GITHUB_SHA" \
+            --title "Latest build" --notes "Built from $GITHUB_SHA. Unzip, then copy the .vst3 folder to C:\Program Files\Common Files\VST3."
